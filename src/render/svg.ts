@@ -85,16 +85,27 @@ function splitLanguagesIntoTwoLines(languages: string[]): [string, string] {
   return [firstLine, secondLine];
 }
 
+function getRepoBarMax(repoCount: number): number {
+  return Math.max(100, Math.ceil(Math.max(repoCount, 1) / 100) * 100);
+}
+
 export function renderStatsCard(stats: GitHubProfileStats, themeName: ThemeName): string {
   const theme = themes[themeName] ?? themes.terminal;
   const [firstLanguageLine, secondLanguageLine] = splitLanguagesIntoTwoLines(stats.topLanguages);
-  const commitCount = stats.commitsLastYear ?? 0;
+  const commitCount = stats.commitsThisYear ?? 0;
   const commitValue = commitCount.toLocaleString("en-US");
-  const commitBar = renderBar(commitCount, 3000);
-  const repoBar = renderBar(Math.min(stats.repoCount, 100), 100);
-  const openSourceBar = renderBar(stats.openSourceRatio, 100);
-  const width = 720;
-  const height = 350;
+  const commitMax = Math.max(stats.commitsLastYear ?? 0, 1);
+  const repoMax = getRepoBarMax(stats.repoCount);
+  const repoProgress = `${stats.repoCount.toLocaleString("en-US")} / ${repoMax.toLocaleString("en-US")}`;
+  const commitProgress = `${commitCount.toLocaleString("en-US")} / ${(stats.commitsLastYear ?? 0).toLocaleString("en-US")}`;
+  const commitBar = renderBar(Math.min(commitCount, commitMax), commitMax);
+  const repoBar = renderBar(stats.repoCount, repoMax);
+  const width = 580;
+  const height = 330;
+  const labelX = 36;
+  const valueX = 122;
+  const barX = 214;
+  const metaX = 404;
 
   return `
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
@@ -102,29 +113,27 @@ export function renderStatsCard(stats: GitHubProfileStats, themeName: ThemeName)
   <desc id="desc">Dynamic GitHub stats card rendered as terminal-style SVG.</desc>
   <rect width="${width}" height="${height}" rx="18" fill="${theme.background}" />
   <rect x="16" y="16" width="${width - 32}" height="${height - 32}" rx="14" fill="${theme.panel}" stroke="${theme.border}" />
-  <text x="36" y="52" fill="${theme.accent}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="20">$ github-stats --user ${escapeXml(stats.username)}</text>
+  <text x="36" y="52" fill="${theme.accent}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="19">$ github-stats --user ${escapeXml(stats.username)}</text>
   <text x="36" y="84" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="26">${escapeXml(stats.displayName)}</text>
   <text x="36" y="110" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${escapeXml(stats.profileUrl)}</text>
 
-  <text x="36" y="154" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">repos</text>
-  <text x="140" y="154" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${stats.repoCount.toLocaleString("en-US")}</text>
-  <text x="230" y="154" fill="${theme.success}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${repoBar}</text>
+  <text x="${labelX}" y="154" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">repos</text>
+  <text x="${valueX}" y="154" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${stats.repoCount.toLocaleString("en-US")}</text>
+  <text x="${barX}" y="154" fill="${theme.success}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${repoBar}</text>
+  <text x="${metaX}" y="154" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="12">${escapeXml(repoProgress)}</text>
 
-  <text x="36" y="184" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">commits</text>
-  <text x="140" y="184" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${escapeXml(commitValue)}</text>
-  <text x="230" y="184" fill="${theme.success}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${commitBar}</text>
+  <text x="${labelX}" y="186" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">commits</text>
+  <text x="${valueX}" y="186" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${escapeXml(commitValue)}</text>
+  <text x="${barX}" y="186" fill="${theme.success}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${commitBar}</text>
+  <text x="${metaX}" y="186" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="12">${escapeXml(commitProgress)}</text>
 
-  <text x="36" y="214" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">langs</text>
-  <text x="140" y="214" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${stats.languageCount}</text>
-  <text x="230" y="214" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="14">${escapeXml(firstLanguageLine)}</text>
-  <text x="230" y="236" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="14">${escapeXml(secondLanguageLine)}</text>
+  <text x="${labelX}" y="220" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">langs</text>
+  <text x="${valueX}" y="220" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${stats.languageCount}</text>
+  <text x="${barX}" y="220" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="13">${escapeXml(firstLanguageLine)}</text>
+  <text x="${barX}" y="240" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="13">${escapeXml(secondLanguageLine)}</text>
 
-  <text x="36" y="266" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">open src</text>
-  <text x="140" y="266" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${stats.openSourceRatio}%</text>
-  <text x="230" y="266" fill="${theme.success}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${openSourceBar}</text>
+  <text x="${labelX}" y="296" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="13">${escapeXml(stats.repoSummary)}</text>
 
-  <text x="36" y="316" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="14">${escapeXml(stats.commitSummary)}</text>
-  <text x="510" y="316" text-anchor="end" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="14">${escapeXml(stats.repoSummary)}</text>
 </svg>`.trim();
 }
 

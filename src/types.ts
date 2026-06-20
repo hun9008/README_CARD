@@ -6,10 +6,11 @@ export interface GitHubProfileStats {
   profileUrl: string;
   avatarUrl: string;
   repoCount: number;
+  organizationCount: number;
   languageCount: number;
   topLanguages: string[];
   totalStars: number;
-  openSourceRatio: number;
+  commitsThisYear: number | null;
   commitsLastYear: number | null;
   commitSummary: string;
   contributionsSummary: string;

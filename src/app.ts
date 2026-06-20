@@ -3,7 +3,24 @@ import { MemoryCache } from "./cache/memory-cache.js";
 import { GitHubClient } from "./github/client.js";
 import { StatsAggregator } from "./github/stats.js";
 import { renderErrorCard, renderStatsCard } from "./render/svg.js";
-import type { ThemeName } from "./types.js";
+import type { GitHubProfileStats, ThemeName } from "./types.js";
+
+const dummyStats: GitHubProfileStats = {
+  username: "dummy-user",
+  displayName: "Dummy Developer",
+  profileUrl: "https://github.com/dummy-user",
+  avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
+  repoCount: 68,
+  organizationCount: 0,
+  languageCount: 7,
+  topLanguages: ["Python", "TypeScript", "Go", "Rust", "C", "HTML", "Shell"],
+  totalStars: 124,
+  commitsThisYear: 486,
+  commitsLastYear: 412,
+  commitSummary: "486 contributions",
+  contributionsSummary: "public contributions this year",
+  repoSummary: "124 starred repos"
+};
 
 export function buildServer() {
   const app = Fastify({
@@ -20,6 +37,22 @@ export function buildServer() {
     ok: true
   }));
 
+  app.get("/api/github-stats/dummy", async (request, reply) => {
+    const query = request.query as {
+      theme?: ThemeName;
+    };
+
+    const theme = supportedThemes.has(query.theme ?? "terminal")
+      ? (query.theme ?? "terminal")
+      : "terminal";
+
+    reply
+      .header("Content-Type", "image/svg+xml; charset=utf-8")
+      .header("Cache-Control", "public, max-age=86400, s-maxage=86400");
+
+    return renderStatsCard(dummyStats, theme);
+  });
+
   app.get("/api/github-stats", async (request, reply) => {
     const query = request.query as {
       username?: string;
@@ -27,16 +60,28 @@ export function buildServer() {
       refresh?: string;
     };
 
+    const rawTheme = query.theme ?? "terminal";
+    const isDummyRequest = typeof rawTheme === "string" && rawTheme.endsWith("/dummy");
+    const normalizedThemeInput = isDummyRequest ? rawTheme.replace(/\/dummy$/u, "") : rawTheme;
+    const theme = supportedThemes.has(normalizedThemeInput as ThemeName)
+      ? (normalizedThemeInput as ThemeName)
+      : "terminal";
+
+    if (isDummyRequest) {
+      reply
+        .header("Content-Type", "image/svg+xml; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        .header("X-Cache", "DUMMY");
+
+      return renderStatsCard(dummyStats, theme);
+    }
+
     if (!query.username) {
       reply.code(400);
       return {
         error: "username query parameter is required"
       };
     }
-
-    const theme = supportedThemes.has(query.theme ?? "terminal")
-      ? (query.theme ?? "terminal")
-      : "terminal";
     const forceRefresh = query.refresh === "1" || query.refresh === "true";
     const cacheKey = `v4:${query.username}:${theme}`;
     const cachedEntry = cache.getEntry(cacheKey);

@@ -8,6 +8,7 @@ export interface GitHubUser {
   html_url: string;
   avatar_url: string;
   public_repos: number;
+  total_private_repos?: number;
 }
 
 export interface GitHubRepo {
@@ -15,6 +16,10 @@ export interface GitHubRepo {
   fork: boolean;
   stargazers_count: number;
   language: string | null;
+}
+
+export interface GitHubOrganization {
+  login: string;
 }
 
 interface GitHubRepoContributor {
@@ -43,8 +48,14 @@ interface GitHubPublicEvent {
   };
 }
 
-export interface ContributionCount {
-  count: number | null;
+interface DateRange {
+  from: Date;
+  to: Date;
+}
+
+export interface ContributionMetrics {
+  currentYearCount: number | null;
+  previousYearCount: number | null;
   summary: string;
 }
 
@@ -83,55 +94,48 @@ export class GitHubClient {
     }
   }
 
-  async getContributionCount(username: string, repos: GitHubRepo[]): Promise<ContributionCount> {
-    const lastYearCount = await this.getContributionsLastYear(username);
-    if (lastYearCount !== null) {
+  async getOrganizations(username: string): Promise<GitHubOrganization[]> {
+    return this.request<GitHubOrganization[]>(`/users/${username}/orgs?per_page=100`);
+  }
+
+  async getContributionMetrics(username: string): Promise<ContributionMetrics> {
+    const currentYearRange = this.getCurrentYearRange();
+    const previousYearRange = this.getPreviousYearRange();
+
+    const currentYearGraphql = await this.getGraphqlContributionCount(username, currentYearRange);
+    const previousYearGraphql = await this.getGraphqlContributionCount(username, previousYearRange);
+    const currentYearPublic = currentYearGraphql ?? await this.getPublicContributionCount(username, currentYearRange);
+    const previousYearPublic =
+      previousYearGraphql ?? await this.getPublicContributionCount(username, previousYearRange);
+
+    if (currentYearGraphql !== null || currentYearPublic !== null) {
       return {
-        count: lastYearCount,
-        summary: "last 12 months"
+        currentYearCount: currentYearGraphql ?? currentYearPublic,
+        previousYearCount: previousYearGraphql ?? previousYearPublic,
+        summary: "public contributions this year"
       };
     }
 
-    const publicCalendarCount = await this.getPublicContributionCalendarCount(username);
-    if (publicCalendarCount !== null) {
+    const recentPublicCommitCount = await this.getRecentPublicCommitCount(username, currentYearRange.from);
+    if (recentPublicCommitCount !== null) {
       return {
-        count: publicCalendarCount,
-        summary: "public contribution calendar"
-      };
-    }
-
-    if (this.token) {
-      const repoContributorCount = await this.getRepoContributorCommitCount(username, repos);
-      if (repoContributorCount !== null) {
-        return {
-          count: repoContributorCount,
-          summary: "public repo contributor totals"
-        };
-      }
-    }
-
-    const publicCommitCount = await this.getRecentPublicCommitCount(username);
-    if (publicCommitCount !== null) {
-      return {
-        count: publicCommitCount,
-        summary: "recent public push events"
+        currentYearCount: recentPublicCommitCount,
+        previousYearCount: previousYearGraphql ?? previousYearPublic,
+        summary: "recent public push events this year"
       };
     }
 
     return {
-      count: null,
-      summary: "public repo data only"
+      currentYearCount: null,
+      previousYearCount: previousYearGraphql ?? previousYearPublic,
+      summary: "public contribution data unavailable"
     };
   }
 
-  private async getContributionsLastYear(username: string): Promise<number | null> {
+  private async getGraphqlContributionCount(username: string, range: DateRange): Promise<number | null> {
     if (!this.token) {
       return null;
     }
-
-    const now = new Date();
-    const from = new Date(now);
-    from.setUTCFullYear(now.getUTCFullYear() - 1);
 
     const query = `
       query UserContributions($login: String!, $from: DateTime!, $to: DateTime!) {
@@ -152,8 +156,8 @@ export class GitHubClient {
         query,
         variables: {
           login: username,
-          from: from.toISOString(),
-          to: now.toISOString()
+          from: range.from.toISOString(),
+          to: range.to.toISOString()
         }
       })
     });
@@ -170,12 +174,9 @@ export class GitHubClient {
     return payload.data?.user?.contributionsCollection.contributionCalendar.totalContributions ?? null;
   }
 
-  private async getPublicContributionCalendarCount(username: string): Promise<number | null> {
-    const now = new Date();
-    const to = now.toISOString().slice(0, 10);
-    const fromDate = new Date(now);
-    fromDate.setUTCFullYear(now.getUTCFullYear() - 1);
-    const from = fromDate.toISOString().slice(0, 10);
+  private async getPublicContributionCount(username: string, range: DateRange): Promise<number | null> {
+    const from = this.formatDate(range.from);
+    const to = this.formatDate(range.to);
     const response = await fetch(
       `${githubProfileBase}/users/${encodeURIComponent(username)}/contributions?from=${from}&to=${to}`,
       {
@@ -195,48 +196,7 @@ export class GitHubClient {
     return count;
   }
 
-  private async getRepoContributorCommitCount(
-    username: string,
-    repos: GitHubRepo[]
-  ): Promise<number | null> {
-    const ownedNonForkRepos = repos.filter((repo) => !repo.fork);
-    if (ownedNonForkRepos.length === 0) {
-      return 0;
-    }
-
-    const normalizedUsername = username.toLowerCase();
-    let total = 0;
-    let completed = 0;
-
-    for (let index = 0; index < ownedNonForkRepos.length; index += 8) {
-      const batch = ownedNonForkRepos.slice(index, index + 8);
-      const results = await Promise.all(
-        batch.map(async (repo) => {
-          try {
-            const contributors = await this.request<GitHubRepoContributor[]>(
-              `/repos/${username}/${repo.name}/contributors?per_page=100`
-            );
-
-            const userContribution = contributors.find(
-              (contributor) => contributor.login?.toLowerCase() === normalizedUsername
-            );
-
-            completed += 1;
-            return userContribution?.contributions ?? 0;
-          } catch {
-            completed += 1;
-            return 0;
-          }
-        })
-      );
-
-      total += results.reduce((sum, value) => sum + value, 0);
-    }
-
-    return completed > 0 ? total : null;
-  }
-
-  private async getRecentPublicCommitCount(username: string): Promise<number | null> {
+  private async getRecentPublicCommitCount(username: string, since: Date): Promise<number | null> {
     try {
       const events = await this.request<GitHubPublicEvent[]>(
         `/users/${username}/events/public?per_page=100`
@@ -246,6 +206,11 @@ export class GitHubClient {
 
       for (const event of events) {
         if (event.type !== "PushEvent") {
+          continue;
+        }
+
+        const createdAt = new Date(event.created_at);
+        if (createdAt < since) {
           continue;
         }
 
@@ -280,23 +245,63 @@ export class GitHubClient {
   }
 
   private extractContributionCountFromHtml(html: string): number | null {
-    const patterns = [
-      /([0-9][0-9,]*)\s+contributions?\s+in\s+the\s+last\s+year/i,
-      /([0-9][0-9,]*)\s+contributions?/i
-    ];
+    const counts = [...html.matchAll(/data-count="(\d+)"/g)].map((match) => Number(match[1]));
+    if (counts.length > 0) {
+      return counts.reduce((sum, value) => sum + value, 0);
+    }
 
-    for (const pattern of patterns) {
-      const matched = html.match(pattern);
-      if (!matched?.[1]) {
-        continue;
-      }
+    const ariaLabelCounts = [...html.matchAll(/aria-label="(\d+)\s+contributions?\s+on/gi)].map((match) =>
+      Number(match[1])
+    );
+    if (ariaLabelCounts.length > 0) {
+      return ariaLabelCounts.reduce((sum, value) => sum + value, 0);
+    }
 
-      const numericValue = Number(matched[1].replaceAll(",", ""));
+    const titleCounts = [...html.matchAll(/title="(\d+)\s+contributions?\s+on/gi)].map((match) =>
+      Number(match[1])
+    );
+    if (titleCounts.length > 0) {
+      return titleCounts.reduce((sum, value) => sum + value, 0);
+    }
+
+    const tooltipCounts = [...html.matchAll(/>(\d+)\s+contributions?\s+on[^<]*</gi)].map((match) =>
+      Number(match[1])
+    );
+    if (tooltipCounts.length > 0) {
+      return tooltipCounts.reduce((sum, value) => sum + value, 0);
+    }
+
+    const summaryMatch =
+      html.match(/>\s*([0-9][0-9,]*)\s+contributions?\s*</i) ??
+      html.match(/([0-9][0-9,]*)\s+contributions?/i);
+    if (summaryMatch?.[1]) {
+      const numericValue = Number(summaryMatch[1].replaceAll(",", ""));
       if (Number.isFinite(numericValue)) {
         return numericValue;
       }
     }
 
     return null;
+  }
+
+  private getCurrentYearRange(): DateRange {
+    const now = new Date();
+    return {
+      from: new Date(Date.UTC(now.getUTCFullYear(), 0, 1, 0, 0, 0, 0)),
+      to: now
+    };
+  }
+
+  private getPreviousYearRange(): DateRange {
+    const now = new Date();
+    const year = now.getUTCFullYear() - 1;
+    return {
+      from: new Date(Date.UTC(year, 0, 1, 0, 0, 0, 0)),
+      to: new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999))
+    };
+  }
+
+  private formatDate(date: Date): string {
+    return date.toISOString().slice(0, 10);
   }
 }

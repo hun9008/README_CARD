@@ -9,16 +9,12 @@ export class StatsAggregator {
   async getProfileStats(username: string): Promise<GitHubProfileStats> {
     const user = await this.githubClient.getUser(username);
     const repos = await this.githubClient.getOwnedRepos(username).catch(() => []);
-    const contributionCount =
-      repos.length > 0
-        ? await this.githubClient.getContributionCount(username, repos).catch(() => ({
-            count: null,
-            summary: "public repo data unavailable"
-          }))
-        : {
-            count: null,
-            summary: user.public_repos > 0 ? "public repo data unavailable" : "no public repos"
-          };
+    const organizations = await this.githubClient.getOrganizations(username).catch(() => []);
+    const contributionMetrics = await this.githubClient.getContributionMetrics(username).catch(() => ({
+      currentYearCount: null,
+      previousYearCount: null,
+      summary: user.public_repos > 0 ? "public contribution data unavailable" : "no public repos"
+    }));
 
     const nonForkRepos = repos.filter((repo) => !repo.fork);
     const languages = new Map<string, number>();
@@ -35,9 +31,12 @@ export class StatsAggregator {
       .sort((a, b) => b[1] - a[1])
       .map(([language]) => language);
 
-    const publicRepoCount = repos.length;
-    const openSourceRatio = publicRepoCount === 0 ? 0 : 100;
     const totalStars = nonForkRepos.reduce((sum, repo) => sum + repo.stargazers_count, 0);
+    const contributionSummary = `${(contributionMetrics.currentYearCount ?? 0).toLocaleString("en-US")} contributions`;
+    const starSummary =
+      totalStars === 0
+        ? "0 starred repos"
+        : `${totalStars.toLocaleString("en-US")} starred repos`;
 
     return {
       username: user.login,
@@ -45,19 +44,18 @@ export class StatsAggregator {
       profileUrl: user.html_url,
       avatarUrl: user.avatar_url,
       repoCount: user.public_repos,
+      organizationCount: organizations.length,
       languageCount: languages.size,
       topLanguages,
       totalStars,
-      openSourceRatio,
-      commitsLastYear: contributionCount.count ?? 0,
-      commitSummary: contributionCount.count === null ? "commit count unavailable, showing 0" : contributionCount.summary,
-      contributionsSummary: contributionCount.summary,
+      commitsThisYear: contributionMetrics.currentYearCount ?? 0,
+      commitsLastYear: contributionMetrics.previousYearCount ?? 0,
+      commitSummary: contributionSummary,
+      contributionsSummary: contributionMetrics.summary,
       repoSummary:
         repos.length === 0 && user.public_repos > 0
           ? "public repo data unavailable"
-          : totalStars === 0
-            ? "building in public"
-            : `${totalStars} stars across public repos`
+          : starSummary
     };
   }
 }
