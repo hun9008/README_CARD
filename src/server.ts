@@ -1,3 +1,4 @@
+import "./env.js";
 import { buildServer } from "./app.js";
 
 const app = buildServer();

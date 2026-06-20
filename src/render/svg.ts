@@ -58,53 +58,43 @@ function renderBar(value: number, max = 100): string {
   return `${"█".repeat(filled)}${"░".repeat(20 - filled)}`;
 }
 
-function summarizeLanguages(languages: string[], maxLength: number): string {
+function splitLanguagesIntoTwoLines(languages: string[]): [string, string] {
   if (languages.length === 0) {
-    return "No dominant language";
+    return ["No dominant language", ""];
+  }
+
+  if (languages.length === 1) {
+    return [languages[0], ""];
   }
 
   const separator = " · ";
-  let summary = "";
-  let shownCount = 0;
+  let firstLine = languages[0];
+  let secondLine = "";
 
-  for (const language of languages) {
-    const nextValue = summary ? `${summary}${separator}${language}` : language;
-    if (nextValue.length > maxLength) {
-      break;
+  for (let index = 1; index < languages.length; index += 1) {
+    const language = languages[index];
+    const nextFirstLine = `${firstLine}${separator}${language}`;
+    if (firstLine.length <= secondLine.length) {
+      firstLine = nextFirstLine;
+      continue;
     }
 
-    summary = nextValue;
-    shownCount += 1;
+    secondLine = secondLine ? `${secondLine}${separator}${language}` : language;
   }
 
-  if (shownCount === languages.length) {
-    return summary;
-  }
-
-  const remainingCount = languages.length - shownCount;
-  const moreLabel = ` +${remainingCount} more`;
-  if (!summary) {
-    return languages[0];
-  }
-
-  if (`${summary}${moreLabel}`.length <= maxLength) {
-    return `${summary}${moreLabel}`;
-  }
-
-  return summary;
+  return [firstLine, secondLine];
 }
 
 export function renderStatsCard(stats: GitHubProfileStats, themeName: ThemeName): string {
   const theme = themes[themeName] ?? themes.terminal;
-  const languages = stats.topLanguages.length > 0 ? stats.topLanguages.join(" · ") : "No dominant language";
-  const displayLanguages = summarizeLanguages(stats.topLanguages, 34);
+  const [firstLanguageLine, secondLanguageLine] = splitLanguagesIntoTwoLines(stats.topLanguages);
   const commitCount = stats.commitsLastYear ?? 0;
   const commitValue = commitCount.toLocaleString("en-US");
   const commitBar = renderBar(commitCount, 3000);
   const repoBar = renderBar(Math.min(stats.repoCount, 100), 100);
   const openSourceBar = renderBar(stats.openSourceRatio, 100);
   const width = 720;
-  const height = 320;
+  const height = 350;
 
   return `
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
@@ -126,14 +116,15 @@ export function renderStatsCard(stats: GitHubProfileStats, themeName: ThemeName)
 
   <text x="36" y="214" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">langs</text>
   <text x="140" y="214" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${stats.languageCount}</text>
-  <text x="230" y="214" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${escapeXml(displayLanguages)}<title>${escapeXml(languages)}</title></text>
+  <text x="230" y="214" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="14">${escapeXml(firstLanguageLine)}</text>
+  <text x="230" y="236" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="14">${escapeXml(secondLanguageLine)}</text>
 
-  <text x="36" y="244" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">open src</text>
-  <text x="140" y="244" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${stats.openSourceRatio}%</text>
-  <text x="230" y="244" fill="${theme.success}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${openSourceBar}</text>
+  <text x="36" y="266" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">open src</text>
+  <text x="140" y="266" fill="${theme.text}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${stats.openSourceRatio}%</text>
+  <text x="230" y="266" fill="${theme.success}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="15">${openSourceBar}</text>
 
-  <text x="36" y="286" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="14">${escapeXml(stats.commitSummary)}</text>
-  <text x="510" y="286" text-anchor="end" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="14">${escapeXml(stats.repoSummary)}</text>
+  <text x="36" y="316" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="14">${escapeXml(stats.commitSummary)}</text>
+  <text x="510" y="316" text-anchor="end" fill="${theme.muted}" font-family="'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" font-size="14">${escapeXml(stats.repoSummary)}</text>
 </svg>`.trim();
 }
 

@@ -1,5 +1,6 @@
 const githubApiBase = "https://api.github.com";
 const githubGraphqlUrl = "https://api.github.com/graphql";
+const githubProfileBase = "https://github.com";
 
 export interface GitHubUser {
   login: string;
@@ -91,6 +92,14 @@ export class GitHubClient {
       };
     }
 
+    const publicCalendarCount = await this.getPublicContributionCalendarCount(username);
+    if (publicCalendarCount !== null) {
+      return {
+        count: publicCalendarCount,
+        summary: "public contribution calendar"
+      };
+    }
+
     if (this.token) {
       const repoContributorCount = await this.getRepoContributorCommitCount(username, repos);
       if (repoContributorCount !== null) {
@@ -159,6 +168,31 @@ export class GitHubClient {
     }
 
     return payload.data?.user?.contributionsCollection.contributionCalendar.totalContributions ?? null;
+  }
+
+  private async getPublicContributionCalendarCount(username: string): Promise<number | null> {
+    const now = new Date();
+    const to = now.toISOString().slice(0, 10);
+    const fromDate = new Date(now);
+    fromDate.setUTCFullYear(now.getUTCFullYear() - 1);
+    const from = fromDate.toISOString().slice(0, 10);
+    const response = await fetch(
+      `${githubProfileBase}/users/${encodeURIComponent(username)}/contributions?from=${from}&to=${to}`,
+      {
+        headers: {
+          "User-Agent": "readme-card",
+          Accept: "text/html,application/xhtml+xml"
+        }
+      }
+    ).catch(() => null);
+
+    if (!response?.ok) {
+      return null;
+    }
+
+    const html = await response.text();
+    const count = this.extractContributionCountFromHtml(html);
+    return count;
   }
 
   private async getRepoContributorCommitCount(
@@ -243,5 +277,26 @@ export class GitHubClient {
       "User-Agent": "readme-card",
       ...(this.token ? { Authorization: `Bearer ${this.token}` } : {})
     };
+  }
+
+  private extractContributionCountFromHtml(html: string): number | null {
+    const patterns = [
+      /([0-9][0-9,]*)\s+contributions?\s+in\s+the\s+last\s+year/i,
+      /([0-9][0-9,]*)\s+contributions?/i
+    ];
+
+    for (const pattern of patterns) {
+      const matched = html.match(pattern);
+      if (!matched?.[1]) {
+        continue;
+      }
+
+      const numericValue = Number(matched[1].replaceAll(",", ""));
+      if (Number.isFinite(numericValue)) {
+        return numericValue;
+      }
+    }
+
+    return null;
   }
 }

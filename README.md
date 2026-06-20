@@ -23,7 +23,8 @@ GitHub 사용자 정보를 조회해 terminal-style 카드로 렌더링합니다
 
 - Public repository count
 - Last 12 months contribution count
-  - GitHub token이 없으면 이 값은 fallback 집계로 표시되거나 제한될 수 있습니다.
+  - GitHub token이 없으면 공개 contribution calendar 기반 fallback을 먼저 시도합니다.
+  - 그래도 실패하면 최근 공개 push 이벤트 기반 fallback으로 표시될 수 있습니다.
 - Language count and top languages
 - Public repo star summary
 - Open source ratio indicator
@@ -65,12 +66,27 @@ npm install
 ### 2. Set environment variables
 
 GitHub token은 선택 사항이지만, contribution 집계 정확도와 rate limit 안정성을 위해 권장됩니다.
+프로젝트 루트의 `.env` 파일도 자동으로 읽습니다.
 
 ```bash
 export GITHUB_TOKEN=your_github_token
 # or GH_TOKEN / GITHUB_PAT / GITHUB_ACCESS_TOKEN
 export PORT=3000
 ```
+
+또는 `.env`에 아래처럼 넣어도 됩니다.
+
+```env
+GITHUB_TOKEN=your_github_token
+PORT=3000
+```
+
+앱은 아래 4개 이름 중 아무 토큰 변수나 읽습니다.
+
+- `GITHUB_TOKEN`
+- `GH_TOKEN`
+- `GITHUB_PAT`
+- `GITHUB_ACCESS_TOKEN`
 
 ### 3. Run in development
 
@@ -103,7 +119,7 @@ npm install
 
 ```bash
 export GITHUB_TOKEN=your_github_token
-export PORT=3000
+export PORT=3005
 ```
 
 ### 3. Build and start with PM2
@@ -118,14 +134,21 @@ npm install -g pm2
 
 ```bash
 npm run build
-pm2 start dist/server.js --name readme-card --update-env
+PORT=3005 pm2 start dist/server.js --name readme-card --update-env
 ```
 
 상태 확인과 로그 확인:
 
 ```bash
 pm2 status
+pm2 env readme-card
 pm2 logs readme-card
+```
+
+이미 PM2에 등록된 프로세스를 갱신할 때는 환경변수를 함께 넘기고 `--update-env`를 유지하는 편이 안전합니다.
+
+```bash
+GITHUB_TOKEN=your_github_token PORT=3005 pm2 restart readme-card --update-env
 ```
 
 ### 4. Update after `git pull`
@@ -137,7 +160,7 @@ cd readme_card
 git pull origin main
 npm install
 npm run build
-pm2 restart readme-card --update-env
+GITHUB_TOKEN=your_github_token PORT=3005 pm2 restart readme-card --update-env
 ```
 
 브랜치 이름이 `main`이 아니라면 해당 브랜치 이름으로 바꿔서 사용하면 됩니다.
@@ -158,11 +181,19 @@ pm2 startup
 배포 후 서버에서 정상 동작 여부를 확인합니다.
 
 ```bash
-curl http://127.0.0.1:3000/health
-curl "http://127.0.0.1:3000/api/github-stats?username=younghune135&theme=terminal"
+curl http://127.0.0.1:3005/health
+curl "http://127.0.0.1:3005/api/github-stats?username=younghune135&theme=terminal"
 ```
 
 Nginx 같은 reverse proxy를 앞단에 둘 경우, 외부에서는 해당 도메인으로 `/api/github-stats`를 연결하면 됩니다.
+
+현재 예시 기준으로 PM2 환경에서 확인되는 핵심 값은 아래와 같습니다.
+
+- process name: `readme-card`
+- version: `0.1.0`
+- node: `20.20.0`
+- port: `3005`
+- working directory: `/home/hun/Desktop/README_CARD`
 
 ## API
 
